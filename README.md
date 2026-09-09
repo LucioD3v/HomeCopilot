@@ -1,123 +1,130 @@
-# 🛡️ HomeCopilot: Everyday Family Agent
+# HomeCopilot: Everyday Family Logistics Agent
 
-## - Strands Agents SDK + AgentCore -
+## Strands Agents SDK + Amazon Bedrock
 
-> Your everyday autonomous copilot for household logistics, designed to eliminate family mental load by proactively navigating daily tasks, grocery budgets, and schedule conflicts.
+HomeCopilot is a human-supervised agent that turns a family's real schedule and an unexpected situation into an explainable logistics plan.
 
 [![Track: Everyday Agents](https://img.shields.io/badge/Track-Everyday_Agents-blue.svg)](https://agentsforhumans.devpost.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Powered by Strands](https://img.shields.io/badge/Powered%20by-Strands%20Agents%20SDK-purple.svg)](https://github.com/strands-agents)
 
----
 
-## 📋 Table of Contents
-- [The Inspiration & The Problem](#-the-inspiration--the-problem)
-- [Target Audience](#-target-audience)
-- [System Architecture](#-system-architecture)
-- [Key Features](#-key-features)
-- [Tech Stack](#-tech-stack)
-- [Setup & Installation](#-setup--installation)
-- [Running the Demo](#-running-the-demo)
-- [License](#-license)
+## Problem
 
----
+Families continuously reconcile work meetings, school pickup, activities, travel, and last-minute changes. The difficult part is deciding what should happen when several commitments become incompatible.
 
-## 💡 The Inspiration & The Problem
-**HomeCopilot was born out of lived experience.** As a remote working father juggling professional software engineering responsibilities while coordinating a complex household—including a 5-year-old son (Gerardo) with an active weekly schedule of swimming, chess, and karate twice a week, alongside a 2-year-old daughter (Isabella) in daycare—the invisible mental load became overwhelmingly real.
+HomeCopilot addresses that decision problem. The user provides their own commitments, locations, family activities, travel estimate, and the situation happening now. The agent evaluates the constraints without inventing missing personal data.
 
-Modern families face a constant stream of micro-decisions: tracking expenses, avoiding budget overruns, coordinating overlapping kids' activities, and balancing household chores without neglecting professional work. Traditional tools are completely reactive—they only work when you manually trigger them, failing to anticipate conflicts or reduce cognitive fatigue.
+## What It Does
 
----
+- Accepts a real agenda using `time | activity | category` lines.
+- Accepts free-form incidents such as a late meeting, a cancelled caregiver, or an impossible pickup.
+- Evaluates the incident with the user's travel estimate and family modules.
+- Produces severity, cause, alternatives, recommendation, and approval-required actions.
+- Creates a WhatsApp draft only when an activity has a name, venue address, and schedule.
+- Blocks calendar, email, and WhatsApp actions when data or approval is missing.
+- Shows an auditable decision cycle: context received, constraints evaluated, tool selected, plan ready, and approval status.
+- Opens a Google Maps route for visual reference while keeping its estimate separate from the user's planning estimate.
 
-## 👥 Target Audience
-Busy parents, remote professionals, and households juggling multiple schedules who need an intelligent, proactive assistant to handle everyday logistics without demanding constant manual intervention.
+## Agent Architecture
 
----
+HomeCopilot is a human-in-the-loop agent, not a static chatbot:
 
-## 🏗️ System Architecture
+1. **Context layer:** Streamlit collects the user's agenda, locations, modules, travel estimate, and current incident.
+2. **Reasoning layer:** Strands `Agent` uses Claude on Amazon Bedrock to interpret the situation and select tools.
+3. **Tool layer:** Custom `@tool` functions evaluate contingencies and prepare or modify actions.
+4. **Decision layer:** The app records and displays an explainable plan.
+5. **Approval layer:** Consequential actions remain blocked until the user approves the plan.
+6. **Audit layer:** The decision trace and action log show what happened and why.
 
-HomeCopilot is built on a robust, scalable agentic architecture:
-1. **Input Layer:** Unstructured user voice notes or chat messages.
-2. **Orchestration Layer:** **Strands Agents SDK** manages the reasoning loops, tool routing, and autonomous decision-making.
-3. **Infrastructure & Runtime:** Deployed with **Amazon Bedrock AgentCore** for secure execution and persistent session memory.
-4. **Action Layer:** Custom Python tools (`@tool`) that evaluate workload limits, kid schedules, and budget thresholds.
+### Architecture Diagram
 
----
+![HomeCopilot architecture](images/Architecture.jpg)
 
-## ✨ Key Features
-- **Proactive Kids' Schedule Management:** Cross-references complex weekly routines (swimming, chess, karate, daycare) to catch time conflicts instantly.
-- **Home Office Workload Balancer:** Evaluates household chores and logistics against remote work hours to prevent burnout and mental fatigue.
-- **Autonomous Reasoning:** Instead of following rigid workflows, the Strands agent chains multiple tools together to provide complete, actionable recommendations.
+## Differentiator
 
----
+HomeCopilot makes the path from personal context to an auditable decision visible. A reviewer can see what context was received, which constraints were evaluated, which tool was selected, what plan was produced, and whether a human approved it.
 
-## 💻 Tech Stack
+This combines agentic reasoning with deterministic guardrails: the model interprets open-ended situations, while the application refuses to create a WhatsApp action from incomplete family data or execute consequential actions without approval.
+
+## Tech Stack
+
 - **Python 3.10+**
-- **Strands Agents SDK**
-- **Amazon Bedrock & AgentCore (Claude Sonnet 4.6)**
-- **Dotenv & Python standard libraries**
+- **Streamlit** for the user interface
+- **Strands Agents SDK** for agent orchestration and tools
+- **Amazon Bedrock** with `global.anthropic.claude-sonnet-4-6`
+- **Google Maps embedded route** for visual route inspection
+- **pandas**, `python-dotenv`, and AWS SDK dependencies
 
----
-
-## ⚙️ Setup & Installation
+## Setup
 
 ### Prerequisites
 
-- Python 3.10 or higher installed on your machine.
-- An active AWS Account with access to Amazon Bedrock models (Claude Sonnet enabled).
-- AWS CLI configured on your local machine.
+- Python 3.10 or higher.
+- An AWS account with access to the configured Amazon Bedrock model.
+- AWS CLI configured locally.
 
-### Step 1: Clone the repository
-```bash
-git clone https://github.com/LucioD3v/HomeCopilot.git
-cd HomeCopilot
-```
-
-### Step 2: Create and activate a virtual environment
-
-**On Windows (PowerShell):**
+### Step 1: Create a virtual environment
+On Windows PowerShell:
 ```powershell
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 ```
 
-**On Mac / Linux:**
+On macOS/Linux:
 ```bash
-python3 -m venv venv
+python -m venv venv
 source venv/bin/activate
 ```
 
-### Step 3: Install dependencies
+### Step 2: Install dependencies
+
 ```bash
-pip install strands-agents strands-agents-tools python-dotenv awscli boto3
+pip install -r requirements.txt
 ```
 
-### Step 4: Configure your AWS Credentials
-Run the following command in your terminal and enter your AWS Access Key ID, Secret Access Key, and your preferred region (e.g., `us-east-1`):
+### Step 3: Configure AWS credentials
 
 ```bash
 aws configure
 ```
 
-### Step 5: Create the environment file
-Create a file named `.env` in the root directory of the project and add your region:
+Create a `.env` file in the project root:
 
 ```env
 AWS_REGION=us-east-1
 ```
 
----
 
-## 🚀 Running the Demo
-Once everything is installed and configured, execute the main script to see the agent process a complex, unstructured family request, invoke custom tools autonomously, and output a proactive decision alert:
+## Run
 
 ```bash
-python main.py
+streamlit run app.py
 ```
 
----
+## Real User Flow
 
-## 📄 License
+1. Enter your own commitments in the sidebar, one per line using `time | activity | category`.
+2. Add home/work locations, family modules, and a travel estimate. A family module needs a name, venue address, and schedule before it can produce a WhatsApp draft.
+3. Describe what is happening now in **Your real situation today**, for example: `My meeting ran 30 minutes over and I need to pick up my child.`
+4. Click **Analyze my day**.
+5. Review the diagnosis, alternatives, decision trace, severity, and recommended plan.
+6. Approve the plan before using calendar or WhatsApp actions.
+
+The application does not invent calendar events, family members, addresses, or schedules.
+
+## Safety and Trust
+
+- User context is treated as the source of truth.
+- Missing information produces a blocked action instead of a generic message.
+- Email, calendar, and WhatsApp tools are approval-gated.
+- The decision trace and action log make agent behavior inspectable.
+- The user's travel estimate and Google Maps' route estimate are labelled separately.
+
+## Current Integration Boundary
+
+The current hackathon build uses local tool implementations and Streamlit session state for calendar, email, and WhatsApp actions. They demonstrate the agent contract and approval flow, but they do not claim to send real email, modify an external calendar, or send a real WhatsApp message. Google Maps is embedded for route visualization and calculates its own travel estimate.
+
+
+## License
 This project is open-source under the [MIT License](LICENSE).
-
----
