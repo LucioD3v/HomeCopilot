@@ -12,20 +12,20 @@ HomeCopilot is a human-supervised agent that turns a family's real schedule and 
 
 The live application is available here: **[Open the HomeCopilot Web App](https://homecopilot.streamlit.app/)**
 
-You can enter your own commitments, family activities, locations, travel estimate, and current situation directly in the browser.
+You can enter your own commitments, family activities, locations, and current situation directly in the browser. HomeCopilot calculates the route duration automatically.
 
 ## Problem
 
 Families continuously reconcile work meetings, school pickup, activities, travel, and last-minute changes. The difficult part is deciding what should happen when several commitments become incompatible.
 
-HomeCopilot addresses that decision problem. The user provides their own commitments, locations, family activities, travel estimate, and the situation happening now. The agent evaluates the constraints without inventing missing personal data.
+HomeCopilot addresses that decision problem. The user provides their own commitments, locations, family activities, and the situation happening now. Google Maps supplies the route duration, and the agent evaluates the constraints without inventing missing personal data.
 
 ## What It Does
 
 - Accepts a real agenda using `time | activity | category` lines.
 - Accepts free-form incidents such as a late meeting, a cancelled caregiver, or an impossible pickup.
-- Evaluates the incident with the user's travel estimate and family modules.
-- Offers supervised autopilot: detects complete context changes, calculates the route, and starts a new agent analysis automatically.
+- Evaluates the incident with the Google Maps route duration and family modules.
+- Automatically detects complete context changes, calculates the route, and starts a new agent analysis without an Analyze button.
 - Produces severity, cause, alternatives, recommendation, and approval-required actions.
 - Creates a WhatsApp draft only when an activity has a name, venue address, and schedule.
 - Blocks calendar, email, and WhatsApp actions when data or approval is missing.
@@ -36,7 +36,7 @@ HomeCopilot addresses that decision problem. The user provides their own commitm
 
 HomeCopilot is a human-in-the-loop agent, not a static chatbot:
 
-1. **Context layer:** Streamlit collects the user's agenda, locations, modules, travel estimate, and current incident.
+1. **Context layer:** Streamlit collects the user's agenda, locations, modules, and current incident.
 2. **Reasoning layer:** Strands `Agent` uses Claude on Amazon Bedrock to interpret the situation and select tools.
 3. **Tool layer:** Custom `@tool` functions evaluate contingencies and prepare or modify actions.
 4. **Decision layer:** The app records and displays an explainable plan.
@@ -142,13 +142,13 @@ Open [http://localhost:8501](http://localhost:8501). The container listens on po
 ## Real User Flow
 
 1. Enter your own commitments in the sidebar, one per line using `time | activity | category`.
-2. Add home/work locations, family modules, and a travel estimate. A family module needs a name, venue address, and schedule before it can produce a WhatsApp draft.
+2. Add home/work locations and family modules. A family module needs a name, venue address, and schedule before it can produce a WhatsApp draft.
 3. Describe what is happening now in **Your real situation today**, for example: `My meeting ran 30 minutes over and I need to pick up my child.`
 4. HomeCopilot detects the completed context and automatically starts the analysis.
 5. Review the diagnosis, alternatives, decision trace, severity, and recommended plan.
 6. Approve the plan before using calendar or WhatsApp actions.
 
-To demonstrate the agentic workflow, enable **Supervised autopilot** in the sidebar. Once the email/calendar context, origin, agenda or incident, and route information are complete, HomeCopilot detects context changes and starts the analysis automatically. External actions still remain behind the human approval gate.
+Once the email/calendar context, origin, agenda or incident, and route information are complete, HomeCopilot detects context changes and starts the analysis automatically. There is no manual Analyze button. External actions still remain behind the human approval gate.
 
 The application does not invent calendar events, family members, addresses, or schedules.
 
@@ -158,7 +158,7 @@ The application does not invent calendar events, family members, addresses, or s
 - Missing information produces a blocked action instead of a generic message.
 - Email, calendar, and WhatsApp tools are approval-gated.
 - The decision trace and action log make agent behavior inspectable.
-- The user's travel estimate and Google Maps' route estimate are labelled separately.
+- The route duration shown to the user comes from the Google Maps Directions API.
 
 ## Current Integration Boundary
 
