@@ -1,6 +1,8 @@
 import datetime
+import base64
 import os
 import urllib.parse
+from pathlib import Path
 import pandas as pd
 import requests
 import streamlit as st
@@ -11,6 +13,12 @@ from strands import Agent, tool
 from strands_tools import calculator
 
 load_dotenv()
+
+logo_path = Path(__file__).parent / "images" / "logo_HomeCopilot.png"
+logo_data_uri = ""
+if logo_path.exists():
+  logo_data = base64.b64encode(logo_path.read_bytes()).decode("ascii")
+  logo_data_uri = f"data:image/png;base64,{logo_data}"
 
 # Streamlit Cloud exposes deployment secrets through st.secrets. Mirror only
 # standard AWS variables so boto3 and Strands can use the same code locally and online.
@@ -48,7 +56,7 @@ current_date_str = now.strftime("%Y-%m-%d")
 
 # --- GESTIÓN DE IDIOMA Y TRADUCCIONES UI ---
 if "language" not in st.session_state:
-  st.session_state.language = "Español"
+  st.session_state.language = "English"
 
 if "theme" not in st.session_state:
   st.session_state.theme = "Oscuro"
@@ -144,7 +152,7 @@ t = T[language]
 
 st.set_page_config(
     page_title=t["page_title"],
-    page_icon="🛡️",
+  page_icon=str(logo_path),
     layout="wide",
   initial_sidebar_state="expanded",
 )
@@ -233,6 +241,62 @@ st.markdown(
       margin-bottom: 0.7rem !important;
     }
     .stDataFrame, .stCodeBlock { width: 100% !important; }
+
+    .homecopilot-splash {
+      min-height: 70vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4rem 1.5rem 2rem 1.5rem;
+      background: radial-gradient(circle at center, #162847 0%, #0b1220 68%);
+      border-radius: 16px;
+    }
+
+    .homecopilot-splash-card {
+      max-width: 520px;
+      padding: 2.5rem 3rem;
+      text-align: center;
+      border: 1px solid #456286;
+      border-radius: 16px;
+      background: rgba(17, 26, 43, 0.92);
+      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
+    }
+
+    .homecopilot-splash-mark {
+      width: 156px;
+      height: 156px;
+      object-fit: contain;
+      line-height: 1;
+      margin-bottom: 1rem;
+    }
+
+    .homecopilot-splash-title {
+      color: #f8fafc;
+      font-size: 2.7rem;
+      font-weight: 750;
+      line-height: 1.1;
+    }
+
+    .homecopilot-splash-subtitle {
+      color: #7dd3fc;
+      font-size: 1.15rem;
+      margin-top: 0.8rem;
+    }
+
+    .homecopilot-splash-body {
+      color: #cbd5e1;
+      font-size: 1rem;
+      margin-top: 1rem;
+    }
+
+    [data-testid="stAppViewContainer"]:has(.homecopilot-splash) [data-testid="stSidebar"] {
+      display: none !important;
+    }
+
+    @media (max-width: 700px) {
+      .homecopilot-splash-card { padding: 2rem 1.25rem; }
+      .homecopilot-splash-title { font-size: 2.2rem; }
+    }
 
     [data-testid="stSpinner"],
     .stSpinner {
@@ -585,6 +649,28 @@ else:
         color: #52627a !important;
       }
 
+      .homecopilot-splash {
+        background: radial-gradient(circle at center, #e2e8f0 0%, #f7f8fb 68%) !important;
+      }
+
+      .homecopilot-splash-card {
+        background: rgba(255, 255, 255, 0.94) !important;
+        border-color: #cbd5e1 !important;
+        box-shadow: 0 24px 70px rgba(71, 85, 105, 0.18) !important;
+      }
+
+      .homecopilot-splash-title {
+        color: #172033 !important;
+      }
+
+      .homecopilot-splash-subtitle {
+        color: #0369a1 !important;
+      }
+
+      .homecopilot-splash-body {
+        color: #475569 !important;
+      }
+
       .journey-step {
         background: #ffffff !important;
         border-color: #cbd5e1 !important;
@@ -720,6 +806,36 @@ else:
 
 if "last_autopilot_signature" not in st.session_state:
   st.session_state.last_autopilot_signature = ""
+
+if "welcome_seen" not in st.session_state:
+  st.session_state.welcome_seen = False
+
+
+if not st.session_state.welcome_seen:
+  splash_title = "Tu agente de logística familiar" if is_es else "Everyday Family Agent"
+  splash_body = (
+      "Convierte tu contexto real en un siguiente paso claro."
+      if is_es
+      else "Turn your real-life context into a clear next step."
+  )
+  splash_button = "Ingresar" if is_es else "Enter"
+  st.markdown(
+      f"""
+      <div class="homecopilot-splash">
+        <div class="homecopilot-splash-card">
+          <img class="homecopilot-splash-mark" src="{logo_data_uri}" alt="HomeCopilot logo">
+          <div class="homecopilot-splash-title">HomeCopilot</div>
+          <div class="homecopilot-splash-subtitle">{splash_title}</div>
+          <div class="homecopilot-splash-body">{splash_body}</div>
+        </div>
+      </div>
+      """,
+      unsafe_allow_html=True,
+  )
+  if st.button(splash_button, type="primary", use_container_width=True):
+    st.session_state.welcome_seen = True
+    st.rerun()
+  st.stop()
 
 
 def record_decision_step(step: str, detail: str, status: str = "done") -> None:
@@ -1573,7 +1689,7 @@ st.markdown(
     f"""
     <div style="margin-top: -10px; margin-bottom: 0px;">
       <h1 class="app-title" style="color: {title_color}; font-size: 2.2rem; font-weight: 700; display: flex; align-items: center; gap: 12px; margin: 0; padding: 0; line-height: 1.2;">
-            🛡️ HomeCopilot: Autonomous Life Logistics Agent
+        <img src="{logo_data_uri}" alt="HomeCopilot logo" style="width: 42px; height: 42px; object-fit: contain; vertical-align: middle;"> HomeCopilot: Autonomous Life Logistics Agent
         </h1>
       <p class="app-subtitle" style="color: {subtitle_color}; font-size: 0.95rem; margin-top: 6px; margin-bottom: 15px;">
             Track: Everyday Agents | Powered by Strands SDK & Amazon Bedrock (Claude 3.5 Sonnet) | Today: <b>%s</b>
