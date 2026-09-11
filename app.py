@@ -2,6 +2,7 @@ import datetime
 import os
 import urllib.parse
 import pandas as pd
+import requests
 import streamlit as st
 import streamlit.components.v1 as components
 from dotenv import load_dotenv
@@ -10,6 +11,23 @@ from strands import Agent, tool
 from strands_tools import calculator
 
 load_dotenv()
+
+# Streamlit Cloud exposes deployment secrets through st.secrets. Mirror only
+# standard AWS variables so boto3 and Strands can use the same code locally and online.
+for aws_key in (
+    "AWS_REGION",
+    "AWS_DEFAULT_REGION",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+    "GOOGLE_MAPS_API_KEY",
+):
+  if aws_key not in os.environ:
+    try:
+      if aws_key in st.secrets:
+        os.environ[aws_key] = str(st.secrets[aws_key])
+    except (FileNotFoundError, KeyError):
+      pass
 
 # --- DETECCIÓN REAL DE DÍA Y FECHA ---
 now = datetime.datetime.now()
@@ -32,18 +50,14 @@ current_date_str = now.strftime("%Y-%m-%d")
 if "language" not in st.session_state:
   st.session_state.language = "Español"
 
-language = st.sidebar.selectbox(
-    "🌐 Language / Idioma",
-    ["English", "Español"],
-    index=0 if st.session_state.language == "English" else 1,
-)
+if "theme" not in st.session_state:
+  st.session_state.theme = "Oscuro"
 
-if language != st.session_state.language:
-  st.session_state.language = language
-  st.session_state.last_agent_response = ""
-  st.rerun()
+language = st.session_state.language
+theme = st.session_state.theme
 
 is_es = language == "Español"
+is_dark = st.session_state.theme in ("Oscuro", "Dark")
 
 T = {
     "Español": {
@@ -51,16 +65,16 @@ T = {
             "HomeCopilot - Agente Universal de Logística de Vida"
         ),
         "settings": "⚙️ Configuración",
-        "sync": "Tu contexto personal",
-        "email_ph": "tu.correo@empresa.com",
-        "btn_sync": "Activar mi espacio de trabajo",
-        "btn_disc": "Desconectar Correo",
+        "sync": "Correo y agenda",
+        "email_ph": "tu.correo@ejemplo.com",
+        "btn_sync": "Conectar correo (simulación)",
+        "btn_disc": "Desconectar correo",
         "work_loc": "Ubicación y Trayecto",
         "work_where": "¿Dónde trabajas hoy?",
         "home_lbl": "Home Office 🏠",
         "pres_lbl": "Presencial / Híbrido 🏢",
-        "home_addr_lbl": "📍 Dirección de Origen (Casa)",
-        "dest_addr_lbl": "📍 Dirección de Destino (Oficina)",
+        "home_addr_lbl": "📍 Origen ",
+        "dest_addr_lbl": "📍 Destino ",
         "phone_lbl": "Teléfono",
         "groups_lbl": "Grupos detectados:",
         "btn_wa_conn": "Vincular WhatsApp",
@@ -69,9 +83,7 @@ T = {
         "num_mods": "Cantidad de módulos",
         "save_mods": "💾 Guardar y Evaluar Módulos",
         "reset": "🗑️ Restablecer Todo",
-        "main_agenda": (
-            "📅 Agenda Laboral y Módulos de Vida Sincronizados"
-        ),
+        "main_agenda": "📅 Tu agenda y contexto personal",
         "diag_title": "🤖 Diagnóstico Logístico",
         "alert_box": "Alerta Emitida",
         "view_live": "🗺️ Ver Ruta en Vivo",
@@ -92,16 +104,16 @@ T = {
     "English": {
         "page_title": "HomeCopilot - Universal Life Logistics Agent",
         "settings": "⚙️ Settings",
-        "sync": "Your personal context",
-        "email_ph": "your.email@company.com",
-        "btn_sync": "Activate my workspace",
-        "btn_disc": "Disconnect Email",
+        "sync": "Email and calendar",
+        "email_ph": "you@example.com",
+        "btn_sync": "Connect email (simulation)",
+        "btn_disc": "Disconnect email",
         "work_loc": "Location & Route",
         "work_where": "Where are you working today?",
         "home_lbl": "Home Office 🏠",
         "pres_lbl": "On-site / Hybrid 🏢",
-        "home_addr_lbl": "📍 Origin Address (Home)",
-        "dest_addr_lbl": "📍 Destination Address (Office)",
+        "home_addr_lbl": "📍 Route origin (Home)",
+        "dest_addr_lbl": "📍 Route destination (Office)",
         "phone_lbl": "Phone Number",
         "groups_lbl": "Detected Groups:",
         "btn_wa_conn": "Connect WhatsApp",
@@ -110,7 +122,7 @@ T = {
         "num_mods": "Number of modules",
         "save_mods": "💾 Save & Evaluate Modules",
         "reset": "🗑️ Reset All",
-        "main_agenda": "📅 Work Agenda & Synchronized Life Modules",
+        "main_agenda": "📅 Your agenda and personal context",
         "diag_title": "🤖 Logistics Diagnosis",
         "alert_box": "Alert Issued",
         "view_live": "🗺️ View Live Route",
@@ -134,14 +146,20 @@ st.set_page_config(
     page_title=t["page_title"],
     page_icon="🛡️",
     layout="wide",
+  initial_sidebar_state="expanded",
 )
 
 # --- ESTILOS CSS (TÍTULO MÁS ARRIBA) ---
 st.markdown(
     """
     <style>
-    header[data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stDecoration"], footer {
+    [data-testid="stToolbar"], [data-testid="stDecoration"], footer {
         display: none !important;
+    }
+
+    header[data-testid="stHeader"] {
+      display: block !important;
+      background: transparent !important;
     }
 
     .stApp {
@@ -163,6 +181,28 @@ st.markdown(
       padding-top: 0.5rem !important;
     }
 
+    section[data-testid="stSidebar"],
+    [data-testid="stSidebar"] {
+      display: block !important;
+      visibility: visible !important;
+      opacity: 1 !important;
+      transform: translateX(0) !important;
+      min-width: 18rem !important;
+      width: 18rem !important;
+      max-width: 18rem !important;
+    }
+
+    section[data-testid="stSidebar"] > div,
+    [data-testid="stSidebarContent"] {
+      display: block !important;
+      visibility: visible !important;
+      opacity: 1 !important;
+    }
+
+    [data-testid="stSidebar"] [data-testid="stSidebarContent"] > div:first-child {
+      padding-top: 0 !important;
+    }
+
     [data-testid="stSidebar"] hr {
       margin: 0.35rem 0 0.65rem 0 !important;
     }
@@ -170,7 +210,7 @@ st.markdown(
     [data-testid="stSidebar"] h1,
     [data-testid="stSidebar"] h2,
     [data-testid="stSidebar"] h3 {
-      margin-top: 0.45rem !important;
+      margin-top: 0.15rem !important;
       margin-bottom: 0.45rem !important;
     }
 
@@ -185,7 +225,48 @@ st.markdown(
     .main hr {
       margin: 0.65rem 0 1rem 0 !important;
     }
+
+    .main h2 {
+      font-size: 1.45rem !important;
+      line-height: 1.25 !important;
+      margin-top: 0.8rem !important;
+      margin-bottom: 0.7rem !important;
+    }
     .stDataFrame, .stCodeBlock { width: 100% !important; }
+
+    [data-testid="stSpinner"],
+    .stSpinner {
+      position: fixed !important;
+      inset: 0 !important;
+      z-index: 999999 !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      background: rgba(7, 15, 29, 0.88) !important;
+      color: #f8fafc !important;
+      font-size: 1.45rem !important;
+      font-weight: 650 !important;
+      letter-spacing: 0 !important;
+    }
+
+    [data-testid="stSpinner"] > div,
+    .stSpinner > div {
+      padding: 28px 36px !important;
+      border: 1px solid #456286 !important;
+      border-radius: 12px !important;
+      background: #111a2b !important;
+      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.35) !important;
+    }
+
+    [data-testid="stSpinner"] p,
+    .stSpinner p,
+    [data-testid="stSpinner"] span,
+    .stSpinner span {
+      color: #f8fafc !important;
+      font-size: 1.45rem !important;
+    }
 
     .agent-response-box {
         padding: 20px 24px;
@@ -197,6 +278,46 @@ st.markdown(
         width: 100% !important;
         box-sizing: border-box;
     }
+
+      .agent-response-box h1,
+      .agent-response-box h2,
+      .agent-response-box h3,
+      .agent-response-box h4,
+      .agent-response-box h5,
+      .agent-response-box h6 {
+        font-size: 1.2rem !important;
+        line-height: 1.2 !important;
+        margin: 0.5rem 0 0.3rem 0 !important;
+        color: #f8fafc !important;
+      }
+
+      .agent-response-box p,
+      .agent-response-box li,
+      .agent-response-box td,
+      .agent-response-box th {
+        font-size: 0.98rem !important;
+        line-height: 1.5 !important;
+        color: #e2e8f0 !important;
+      }
+
+      .agent-response-box p {
+        margin: 0.35rem 0 !important;
+      }
+
+      .agent-response-box ul,
+      .agent-response-box ol {
+        margin: 0.35rem 0 0.55rem 1.25rem !important;
+        padding-left: 0.75rem !important;
+      }
+
+      .agent-response-box li {
+        margin: 0.18rem 0 !important;
+      }
+
+      .agent-response-box hr {
+        margin: 0.65rem 0 !important;
+        border-color: #334765 !important;
+      }
     
     .proactive-card-alert {
         background-color: #450a0a;
@@ -206,10 +327,322 @@ st.markdown(
         margin-top: 12px;
         color: #fca5a5;
     }
+
+      .contingency-plan-card {
+        color: #f8fafc !important;
+      }
+
+      .contingency-plan-card h4,
+      .contingency-plan-card p,
+      .contingency-plan-card li {
+        color: #f8fafc !important;
+      }
+
+      .contingency-plan-card p {
+        color: #dbeafe !important;
+      }
+
+      .journey-strip {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        margin: 12px 0 22px 0;
+      }
+
+      .journey-step {
+        min-height: 70px;
+        padding: 12px 14px;
+        border: 1px solid #334155;
+        border-radius: 8px;
+        background: #151b29;
+        color: #cbd5e1;
+      }
+
+      .journey-step strong {
+        display: block;
+        color: #f8fafc;
+        margin-bottom: 4px;
+      }
+
+      .journey-step.active {
+        border-color: #38bdf8;
+        box-shadow: inset 3px 0 0 #38bdf8;
+      }
+
+      @media (max-width: 700px) {
+        .journey-strip { grid-template-columns: 1fr; }
+      }
     </style>
 """,
     unsafe_allow_html=True,
 )
+
+if is_dark:
+  st.markdown(
+      """
+      <style>
+      :root {
+        color-scheme: dark;
+      }
+
+      html, body, .stApp,
+      [data-testid="stAppViewContainer"],
+      [data-testid="stMain"],
+      [data-testid="stMainBlockContainer"],
+      section.main {
+        background: #0b1220 !important;
+        color: #f8fafc !important;
+      }
+
+      [data-testid="stHeader"] {
+        background: #0b1220 !important;
+      }
+
+      [data-testid="stSidebar"],
+      [data-testid="stSidebarContent"] {
+        background: #111a2b !important;
+        color: #f8fafc !important;
+      }
+
+      [data-testid="stAppViewContainer"] .main h1,
+      [data-testid="stAppViewContainer"] .main h2,
+      [data-testid="stAppViewContainer"] .main h3,
+      [data-testid="stAppViewContainer"] .main h4,
+      [data-testid="stAppViewContainer"] .main p,
+      [data-testid="stAppViewContainer"] .main label,
+      section.main label,
+      section.main [data-testid="stWidgetLabel"] p,
+      [data-testid="stSidebar"] h1,
+      [data-testid="stSidebar"] h2,
+      [data-testid="stSidebar"] h3,
+      [data-testid="stSidebar"] p,
+      [data-testid="stSidebar"] label {
+        color: #f8fafc !important;
+      }
+
+        .app-title {
+          color: #f8fafc !important;
+        }
+
+        .app-subtitle {
+          color: #a8b6cc !important;
+        }
+
+        [data-testid="stCaptionContainer"],
+        [data-testid="stCaptionContainer"] p,
+        [data-testid="stSidebar"] [data-testid="stCaptionContainer"],
+        [data-testid="stSidebar"] [data-testid="stCaptionContainer"] p {
+        color: #a8b6cc !important;
+      }
+
+        [data-baseweb="input"],
+        [data-baseweb="textarea"],
+      [data-baseweb="select"] > div,
+        [data-testid="stTextInput"] input,
+        [data-testid="stTextArea"] textarea,
+      textarea,
+      input {
+        background: #18243a !important;
+        color: #f8fafc !important;
+        border-color: #334765 !important;
+      }
+
+        [data-baseweb="input"] input::placeholder,
+        [data-baseweb="textarea"] textarea::placeholder,
+        [data-testid="stTextInput"] input::placeholder,
+        [data-testid="stTextArea"] textarea::placeholder,
+        textarea::placeholder {
+          color: #b8c7dc !important;
+          opacity: 1 !important;
+      }
+
+      [data-testid="stButton"] button {
+        background: #263a59 !important;
+        color: #f8fafc !important;
+        border: 1px solid #456286 !important;
+      }
+
+      [data-testid="stButton"] button[kind="primary"] {
+        background: #ff5a5f !important;
+        color: #ffffff !important;
+        border-color: #ff7074 !important;
+      }
+
+      .route-close-button button {
+        background: #263a59 !important;
+        color: #f8fafc !important;
+        border: 1px solid #5c7397 !important;
+      }
+
+      [data-testid="stDataFrame"] {
+        background: #111a2b !important;
+      }
+
+      [data-testid="stAlert"] {
+        background: #172943 !important;
+        color: #f8fafc !important;
+      }
+
+        [data-testid="stSpinner"],
+        .stSpinner {
+          background: rgba(241, 245, 249, 0.88) !important;
+          color: #172033 !important;
+        }
+
+        [data-testid="stSpinner"] > div,
+        .stSpinner > div {
+          background: #ffffff !important;
+          border-color: #94a3b8 !important;
+        }
+
+        [data-testid="stSpinner"] p,
+        .stSpinner p,
+        [data-testid="stSpinner"] span,
+        .stSpinner span {
+          color: #172033 !important;
+        }
+
+        [data-testid="stAlert"] p,
+        [data-testid="stAlert"] span,
+        [data-testid="stAlert"] div {
+          color: #dbeafe !important;
+        }
+
+          [data-testid="stExpander"],
+          [data-testid="stExpander"] details,
+          [data-testid="stExpander"] summary,
+          [data-testid="stExpander"] summary p,
+          [data-testid="stExpander"] summary span,
+          [data-testid="stExpander"] button {
+            background: #111a2b !important;
+            color: #f8fafc !important;
+            border-color: #334765 !important;
+          }
+
+          [data-testid="stExpander"] [data-testid="stCaptionContainer"],
+          [data-testid="stExpander"] [data-testid="stCaptionContainer"] p,
+          [data-testid="stExpander"] [data-testid="stMarkdownContainer"] p,
+          [data-testid="stExpander"] [data-testid="stMarkdownContainer"] strong {
+            color: #dbeafe !important;
+          }
+
+            [data-testid="stDialog"],
+            [role="dialog"] {
+              background: #111a2b !important;
+              color: #f8fafc !important;
+            }
+
+            [data-testid="stDialog"] h2,
+            [data-testid="stDialog"] h3,
+            [data-testid="stDialog"] button,
+            [role="dialog"] h2,
+            [role="dialog"] h3,
+            [role="dialog"] button {
+              color: #f8fafc !important;
+            }
+
+            [data-testid="stDialog"] [data-testid="stMarkdownContainer"] p,
+            [role="dialog"] [data-testid="stMarkdownContainer"] p {
+              color: #e2e8f0 !important;
+            }
+
+            .route-close-button button {
+              background: #e2e8f0 !important;
+              color: #172033 !important;
+              border: 1px solid #94a3b8 !important;
+            }
+      </style>
+      """,
+      unsafe_allow_html=True,
+  )
+else:
+  st.markdown(
+      """
+      <style>
+      [data-testid="stAppViewContainer"],
+      [data-testid="stHeader"] {
+        background: #f7f8fb !important;
+      }
+
+      [data-testid="stSidebar"] {
+        background: #eef1f6 !important;
+      }
+
+      [data-testid="stAppViewContainer"] .main,
+      [data-testid="stAppViewContainer"] .main h1,
+      [data-testid="stAppViewContainer"] .main h2,
+      [data-testid="stAppViewContainer"] .main h3,
+      [data-testid="stAppViewContainer"] .main label,
+      [data-testid="stAppViewContainer"] .main p {
+        color: #172033 !important;
+      }
+
+      .app-title {
+        color: #172033 !important;
+      }
+
+      .app-subtitle {
+        color: #52627a !important;
+      }
+
+      .journey-step {
+        background: #ffffff !important;
+        border-color: #cbd5e1 !important;
+        color: #475569 !important;
+      }
+
+      .journey-step strong {
+        color: #172033 !important;
+      }
+
+      .agent-response-box {
+        background: #ffffff !important;
+        border-left-color: #2563eb !important;
+        color: #172033 !important;
+      }
+
+      .agent-response-box h1,
+      .agent-response-box h2,
+      .agent-response-box h3,
+      .agent-response-box h4,
+      .agent-response-box h5,
+      .agent-response-box h6,
+      .agent-response-box p,
+      .agent-response-box li,
+      .agent-response-box td,
+      .agent-response-box th {
+        color: #172033 !important;
+      }
+
+      .contingency-plan-card p,
+      .contingency-plan-card li,
+      .contingency-plan-card h4 {
+        color: #172033 !important;
+      }
+
+      [data-testid="stDialog"],
+      [role="dialog"] {
+        background: #ffffff !important;
+        color: #172033 !important;
+      }
+
+      [data-testid="stDialog"] h2,
+      [data-testid="stDialog"] h3,
+      [data-testid="stDialog"] button,
+      [role="dialog"] h2,
+      [role="dialog"] h3,
+      [role="dialog"] button {
+        color: #172033 !important;
+      }
+
+      [data-testid="stDialog"] [data-testid="stMarkdownContainer"] p,
+      [role="dialog"] [data-testid="stMarkdownContainer"] p {
+        color: #334155 !important;
+      }
+      </style>
+      """,
+      unsafe_allow_html=True,
+    )
 
 # --- INICIALIZACIÓN DE SESIÓN (STATE) ---
 if "timeline_events" not in st.session_state:
@@ -272,7 +705,21 @@ if "real_incident_text" not in st.session_state:
   st.session_state.real_incident_text = ""
 
 if "user_travel_time_min" not in st.session_state:
-  st.session_state.user_travel_time_min = 30
+  st.session_state.user_travel_time_min = 0
+
+if "route_status" not in st.session_state:
+  st.session_state.route_status = "not_calculated"
+
+if "show_route_panel" not in st.session_state:
+  st.session_state.show_route_panel = False
+
+if "autopilot_enabled" not in st.session_state:
+  st.session_state.autopilot_enabled = True
+else:
+  st.session_state.autopilot_enabled = True
+
+if "last_autopilot_signature" not in st.session_state:
+  st.session_state.last_autopilot_signature = ""
 
 
 def record_decision_step(step: str, detail: str, status: str = "done") -> None:
@@ -319,6 +766,55 @@ def get_actionable_modules() -> list[dict]:
       and module.get("sede_1", {}).get("rutina")
       and module["sede_1"]["direccion"] != "No specified"
   ]
+
+
+def get_route_destination(office_address: str) -> str:
+  """Selects the real destination used for the route calculation."""
+  if office_address.strip():
+    return office_address.strip()
+  actionable_modules = get_actionable_modules()
+  if actionable_modules:
+    return actionable_modules[0]["sede_1"]["direccion"]
+  return ""
+
+
+def get_google_route_minutes(origin: str, destination: str) -> int | None:
+  """Gets driving time from Google Maps Directions API without inventing a fallback."""
+  api_key = os.getenv("GOOGLE_MAPS_API_KEY", "").strip()
+  if not api_key or not origin.strip() or not destination.strip():
+    st.session_state.route_status = "missing_configuration"
+    return None
+
+  try:
+    response = requests.get(
+        "https://maps.googleapis.com/maps/api/directions/json",
+        params={
+            "origin": origin,
+            "destination": destination,
+            "mode": "driving",
+            "departure_time": "now",
+            "traffic_model": "best_guess",
+            "key": api_key,
+        },
+        timeout=10,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    routes = payload.get("routes", [])
+    if not routes or payload.get("status") != "OK":
+      st.session_state.route_status = "unavailable"
+      return None
+    leg = routes[0].get("legs", [{}])[0]
+    # Use the base route duration so the value matches the embedded map's route.
+    duration = leg.get("duration")
+    if not duration or not duration.get("value"):
+      st.session_state.route_status = "unavailable"
+      return None
+    st.session_state.route_status = "ready"
+    return max(1, round(duration["value"] / 60))
+  except (requests.RequestException, ValueError, KeyError, IndexError):
+    st.session_state.route_status = "unavailable"
+    return None
 
 
 # --- HERRAMIENTAS STRANDS SDK (@tool) ---
@@ -507,11 +1003,15 @@ with st.sidebar:
 
   st.subheader(f"🔗 {t['sync']}")
   email_input = st.text_input(
-      "Correo electrónico" if is_es else "Email Address",
+      "Correo electrónico" if is_es else "Email address",
       value=st.session_state.user_email,
       placeholder=t["email_ph"],
   )
-
+  st.caption(
+      "Agrega tu correo para simular el acceso a tu agenda y cargar sus actividades."
+      if is_es
+      else "Add your email to simulate access to your calendar and load its activities."
+  )
   st.text_area(
       "Compromisos de hoy" if is_es else "Today's commitments",
       key="user_schedule_text",
@@ -546,19 +1046,26 @@ with st.sidebar:
 
   if not st.session_state.email_connected:
     if st.button(t["btn_sync"], type="primary", use_container_width=True):
-      st.session_state.email_connected = True
-      st.session_state.user_email = email_input.strip() or "Sesión local"
-      st.session_state.timeline_events = parse_user_schedule(
-          st.session_state.user_schedule_text
-      )
-      record_decision_step(
-          "Context loaded",
-          "Personal schedule loaded without invented events.",
-      )
-      st.session_state.agent_actions.append(
-          "🔗 [USER CONTEXT]: Personal schedule loaded without invented events."
-      )
-      st.rerun()
+      if email_input.strip() and "@" in email_input:
+        st.session_state.email_connected = True
+        st.session_state.user_email = email_input.strip()
+        st.session_state.timeline_events = parse_user_schedule(
+            st.session_state.user_schedule_text
+        )
+        record_decision_step(
+            "Context loaded",
+            "Calendar access simulated; user-provided activities loaded.",
+        )
+        st.session_state.agent_actions.append(
+            "🔗 [CALENDAR SIMULATION]: User email accepted and agenda loaded."
+        )
+        st.rerun()
+      else:
+        st.warning(
+            "Agrega un correo válido para conectar la agenda simulada."
+            if is_es
+            else "Add a valid email to connect the simulated calendar."
+        )
   else:
     st.success(f"🟢 {st.session_state.user_email}")
     if st.button(t["btn_disc"], use_container_width=True):
@@ -860,11 +1367,31 @@ with st.sidebar:
           "waiting",
       )
 
-    st.session_state.baseline_travel_time_min = (
-      travel_time_override
-      if travel_time_override is not None
-      else st.session_state.user_travel_time_min
-    )
+    if travel_time_override is not None:
+      st.session_state.baseline_travel_time_min = travel_time_override
+    else:
+      route_destination = get_route_destination(dest_addr_val)
+      route_minutes = get_google_route_minutes(
+          origin_addr_val,
+          route_destination,
+      )
+      if route_minutes is None:
+        st.session_state.route_status = "unavailable"
+        st.session_state.last_agent_response = (
+            "No pude calcular el tiempo de la ruta con Google Maps. "
+            "Verifica el origen, el destino y GOOGLE_MAPS_API_KEY."
+            if is_es
+            else "I could not calculate the route time with Google Maps. "
+            "Check the origin, destination, and GOOGLE_MAPS_API_KEY."
+        )
+        st.session_state.contingency_plan = None
+        record_decision_step(
+            "Action blocked",
+            "No plan generated because Google Maps returned no valid route duration.",
+            "waiting",
+        )
+        return
+      st.session_state.baseline_travel_time_min = route_minutes
     st.session_state.travel_time_min = (
         st.session_state.baseline_travel_time_min
         + st.session_state.contingency_delay_min
@@ -953,9 +1480,9 @@ USER LIFE MODULES:
     st.session_state.draft_wa_message = ""
     if st.session_state.email_connected:
       with st.spinner(
-          "🤖 Actualizando módulos y evaluando logística..."
+          "🤖 HomeCopilot está actualizando tu contexto y evaluando la logística..."
           if is_es
-          else "🤖 Updating modules and evaluating logistics..."
+          else "🤖 HomeCopilot is updating your context and evaluating logistics..."
       ):
         eval_prompt = (
             f"He actualizado mis módulos de vida. Evalúa mi agenda para hoy ({current_day_en} / {current_day_es}), verifica el tráfico desde {origin_address} hasta las sedes de las actividades y dame recomendaciones detalladas en {language}."
@@ -978,8 +1505,7 @@ USER LIFE MODULES:
     st.rerun()
 
 
-# --- POPUP MAPA DE TRÁFICO ---
-@st.dialog(t["map_title"])
+# --- PANEL INLINE DE MAPA ---
 def show_traffic_map(origen, destino):
   valid_origen = (
       origen if (origen and origen != "Origen") else "Origin not specified"
@@ -990,17 +1516,18 @@ def show_traffic_map(origen, destino):
       else "Destination not specified"
   )
 
+  st.markdown(f"### {t['map_title']}")
   st.markdown(
       f"**📍 Origen / Origin:** {valid_origen}  ──🚗──>  **🏁 Destino / Destination:** {valid_destino}"
   )
-  st.error(
-      f"⚠️ **{('Referencia ingresada por ti:' if is_es else 'Your entered reference:')}** **{st.session_state.travel_time_min} {'minutos' if is_es else 'minutes'}**."
+  st.success(
+      f"✅ **{('Tiempo de la ruta:' if is_es else 'Route time:')}** **{st.session_state.travel_time_min} {'minutos' if is_es else 'minutes'}**"
   )
-  st.info(
-      "Google Maps muestra abajo su propio cálculo de ruta y tráfico. Esa cifra puede diferir de tu referencia."
+  st.caption(
+      "El tiempo mostrado corresponde a la misma ruta A → B calculada por el agente."
       if is_es
-      else "Google Maps shows its own route and traffic calculation below. That value can differ from your reference."
-    )
+      else "The displayed time corresponds to the same A → B route calculated by the agent."
+  )
 
   orig_encoded = urllib.parse.quote(valid_origen)
   dest_encoded = urllib.parse.quote(valid_destino)
@@ -1008,7 +1535,11 @@ def show_traffic_map(origen, destino):
   map_url = f"https://maps.google.com/maps?saddr={orig_encoded}&daddr={dest_encoded}&output=embed"
 
   components.iframe(map_url, height=380, scrolling=True)
-  if st.button(t["close_map"], use_container_width=True):
+  st.markdown('<div class="route-close-button">', unsafe_allow_html=True)
+  close_route = st.button(t["close_map"], use_container_width=True)
+  st.markdown("</div>", unsafe_allow_html=True)
+  if close_route:
+    st.session_state.show_route_panel = False
     st.rerun()
 
 
@@ -1018,20 +1549,64 @@ date_display = (
     if is_es
     else f"{current_day_en}, {now.strftime('%B %d, %Y')}"
 )
+title_color = "#f8fafc" if is_dark else "#172033"
+subtitle_color = "#a8b6cc" if is_dark else "#52627a"
+
+top_spacer, es_col, en_col, theme_col = st.columns([8, 0.7, 0.7, 0.9])
+with es_col:
+  if st.button("ES", key="language_es", use_container_width=True):
+    st.session_state.language = "Español"
+    st.session_state.last_agent_response = ""
+    st.rerun()
+with en_col:
+  if st.button("EN", key="language_en", use_container_width=True):
+    st.session_state.language = "English"
+    st.session_state.last_agent_response = ""
+    st.rerun()
+with theme_col:
+  theme_icon = "🌙" if is_dark else "☀️"
+  if st.button(theme_icon, key="theme_toggle", use_container_width=True):
+    st.session_state.theme = "Claro" if is_dark else "Oscuro"
+    st.rerun()
 
 st.markdown(
-    """
+    f"""
     <div style="margin-top: -10px; margin-bottom: 0px;">
-        <h1 style="color: #ffffff; font-size: 2.2rem; font-weight: 700; display: flex; align-items: center; gap: 12px; margin: 0; padding: 0; line-height: 1.2;">
+      <h1 class="app-title" style="color: {title_color}; font-size: 2.2rem; font-weight: 700; display: flex; align-items: center; gap: 12px; margin: 0; padding: 0; line-height: 1.2;">
             🛡️ HomeCopilot: Autonomous Life Logistics Agent
         </h1>
-        <p style="color: #94a3b8; font-size: 0.95rem; margin-top: 6px; margin-bottom: 15px;">
+      <p class="app-subtitle" style="color: {subtitle_color}; font-size: 0.95rem; margin-top: 6px; margin-bottom: 15px;">
             Track: Everyday Agents | Powered by Strands SDK & Amazon Bedrock (Claude 3.5 Sonnet) | Today: <b>%s</b>
         </p>
     </div>
     <hr style="margin: 5px 0 20px 0; border-color: #334155;">
 """
     % (date_display),
+    unsafe_allow_html=True,
+)
+
+context_ready = st.session_state.email_connected
+plan_ready = bool(st.session_state.contingency_plan)
+step_one_class = "active" if not context_ready else ""
+step_two_class = "active" if context_ready and not plan_ready else ""
+step_three_class = "active" if plan_ready else ""
+st.markdown(
+    f"""
+    <div class="journey-strip">
+      <div class="journey-step {step_one_class}">
+        <strong>1 · {'Cuéntame tu contexto' if is_es else 'Tell me your context'}</strong>
+        {'Agenda, actividades y ubicaciones' if is_es else 'Schedule, activities, and locations'}
+      </div>
+      <div class="journey-step {step_two_class}">
+        <strong>2 · {'Analicemos el día' if is_es else 'Analyze the day'}</strong>
+        {'Describe lo que está pasando ahora' if is_es else 'Describe what is happening now'}
+      </div>
+      <div class="journey-step {step_three_class}">
+        <strong>3 · {'Tú decides' if is_es else 'You decide'}</strong>
+        {'Aprueba las acciones del plan' if is_es else 'Approve the plan actions'}
+      </div>
+    </div>
+    """,
     unsafe_allow_html=True,
 )
 
@@ -1075,67 +1650,70 @@ incident_text = st.text_area(
         else "Ex. My meeting ran 30 minutes over and I need to pick up my daughter from school."
     ),
 )
-travel_col, run_col = st.columns([1, 1])
-with travel_col:
-  real_travel_time = st.number_input(
-      "Tu estimación de traslado (minutos)"
-      if is_es
-      else "Your travel estimate (minutes)",
-      min_value=0,
-      max_value=300,
-      value=st.session_state.user_travel_time_min,
-      step=5,
-  )
-  st.caption(
-      "Este dato alimenta el análisis del agente; Google Maps mostrará su propia estimación."
-      if is_es
-      else "This value feeds the agent analysis; Google Maps will show its own estimate."
-    )
-with run_col:
-  st.markdown("<br>", unsafe_allow_html=True)
-  analyze_label = "⚡ Analizar mi día" if is_es else "⚡ Analyze my day"
-  if st.button(analyze_label, type="primary", use_container_width=True):
-    st.session_state.user_travel_time_min = int(real_travel_time)
+
+autopilot_context = "|".join(
+    [
+        st.session_state.user_schedule_text,
+        incident_text,
+        origin_address,
+        destination_address,
+        repr(st.session_state.life_modules),
+    ]
+)
+autopilot_signature = str(hash(autopilot_context))
+autopilot_ready = (
+    st.session_state.autopilot_enabled
+    and st.session_state.email_connected
+    and bool(origin_address.strip())
+    and bool(incident_text.strip() or st.session_state.user_schedule_text.strip())
+)
+if autopilot_ready and autopilot_signature != st.session_state.last_autopilot_signature:
+  st.session_state.last_autopilot_signature = autopilot_signature
+  route_destination = get_route_destination(destination_address)
+  route_minutes = get_google_route_minutes(origin_address, route_destination)
+  if route_minutes is not None:
+    st.session_state.user_travel_time_min = route_minutes
     st.session_state.contingency_delay_min = 0
     st.session_state.contingency_scenario = incident_text.strip() or (
         "Día normal" if is_es else "Normal day"
     )
-    plan = build_contingency_plan(
+    st.session_state.contingency_plan = build_contingency_plan(
         0,
         st.session_state.contingency_scenario,
-        int(real_travel_time),
+        route_minutes,
         language,
     )
-    st.session_state.contingency_plan = plan
     st.session_state.plan_approved = False
-    st.session_state.travel_time_min = int(real_travel_time)
+    st.session_state.travel_time_min = route_minutes
     st.session_state.agent_actions.append(
-        "🧭 [REAL CONTEXT]: User situation submitted for analysis."
+        f"🤖 [AUTOPILOT]: Context change detected; route calculated at {route_minutes} min."
     )
     with st.spinner(
-        "🤖 El agente está analizando tu día..."
+        "🤖 HomeCopilot está analizando tu contexto..."
         if is_es
-        else "🤖 Agent is analyzing your day..."
+        else "🤖 HomeCopilot is analyzing your context..."
     ):
       run_agent_execution(
           (
-              "Analiza mi situación real actual, mi agenda y mis módulos familiares. "
-              "Llama a evaluate_contingency usando la incidencia que reporté. Devuelve un diagnóstico, alternativas, recomendación y acciones que requieren aprobación."
+              "Analiza automáticamente mi contexto actualizado, agenda, ruta y situación real. "
+              "Selecciona las herramientas necesarias, prepara un plan y deja las acciones externas esperando mi aprobación."
               if is_es
-              else "Analyze my current real situation, schedule, and family modules. "
-              "Call evaluate_contingency using my reported incident. Return a diagnosis, alternatives, recommendation, and approval-required actions."
+              else "Automatically analyze my updated context, schedule, route, and real situation. "
+              "Select the necessary tools, prepare a plan, and leave external actions waiting for my approval."
           ),
           work_mode,
           origin_address,
           destination_address,
           language,
           incident_text,
-          int(real_travel_time),
+          route_minutes,
       )
     st.rerun()
 
 if st.session_state.contingency_plan:
   plan = st.session_state.contingency_plan
+  if plan.get("travel_time", 0) > 0:
+    st.session_state.travel_time_min = plan["travel_time"]
   severity_color = {
     "Alta": "#ef4444",
     "High": "#ef4444",
@@ -1144,7 +1722,7 @@ if st.session_state.contingency_plan:
   }.get(plan["severity"], "#22c55e")
   st.markdown(
     f"""
-    <div style="border: 1px solid {severity_color}; border-left: 6px solid {severity_color}; border-radius: 8px; padding: 16px; margin: 12px 0; background: #172033;">
+    <div class="contingency-plan-card" style="border: 1px solid {severity_color}; border-left: 6px solid {severity_color}; border-radius: 8px; padding: 16px; margin: 12px 0; background: #172033;">
     <h4 style="margin: 0 0 8px 0;">{plan['title']} · {plan['severity']}</h4>
     <p style="margin: 0 0 8px 0;"><b>{'Por qué importa' if is_es else 'Why it matters'}:</b> {plan['reason']}</p>
     <p style="margin: 0 0 6px 0;"><b>{'Plan recomendado' if is_es else 'Recommended plan'}:</b></p>
@@ -1226,7 +1804,7 @@ if st.session_state.last_agent_response:
       f"""
         <div class='proactive-card-alert'>
             <h4>📧 {t['alert_box']}</h4>
-            <p>{('Origen:' if is_es else 'Origin:')} <b>{origin_address if origin_address else ('No especificado' if is_es else 'Not specified')}</b> ➔ {('Destino:' if is_es else 'Destination:')} <b>{activity_dest}</b> | {('Referencia de traslado:' if is_es else 'Travel reference:')} <b>{st.session_state.travel_time_min} {'mins' if is_es else 'mins'}</b>.</p>
+            <p>{('Origen:' if is_es else 'Origin:')} <b>{origin_address if origin_address else ('No especificado' if is_es else 'Not specified')}</b> ➔ {('Destino:' if is_es else 'Destination:')} <b>{activity_dest}</b> | {('Tiempo Google Maps:' if is_es else 'Google Maps time:')} <b>{st.session_state.travel_time_min} {'mins' if is_es else 'mins'}</b>.</p>
         </div>
     """,
       unsafe_allow_html=True,
@@ -1236,7 +1814,10 @@ if st.session_state.last_agent_response:
 
   with col_map_btn:
     if st.button(t["view_live"], use_container_width=True):
-      show_traffic_map(origin_address, activity_dest)
+      st.session_state.show_route_panel = not st.session_state.show_route_panel
+
+  if st.session_state.show_route_panel:
+    show_traffic_map(origin_address, activity_dest)
 
   with col_actions:
     actionable_modules = get_actionable_modules()

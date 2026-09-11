@@ -25,6 +25,7 @@ HomeCopilot addresses that decision problem. The user provides their own commitm
 - Accepts a real agenda using `time | activity | category` lines.
 - Accepts free-form incidents such as a late meeting, a cancelled caregiver, or an impossible pickup.
 - Evaluates the incident with the user's travel estimate and family modules.
+- Offers supervised autopilot: detects complete context changes, calculates the route, and starts a new agent analysis automatically.
 - Produces severity, cause, alternatives, recommendation, and approval-required actions.
 - Creates a WhatsApp draft only when an activity has a name, venue address, and schedule.
 - Blocks calendar, email, and WhatsApp actions when data or approval is missing.
@@ -58,6 +59,7 @@ This combines agentic reasoning with deterministic guardrails: the model interpr
 - **Streamlit** for the user interface
 - **Strands Agents SDK** for agent orchestration and tools
 - **Amazon Bedrock** with `global.anthropic.claude-sonnet-4-6`
+- **Google Maps Directions API** for origin-to-destination travel time
 - **Google Maps embedded route** for visual route inspection
 - **pandas**, `python-dotenv`, and AWS SDK dependencies
 
@@ -121,9 +123,10 @@ For a new deployment or a private fork, add the required secrets in the app sett
 AWS_REGION = "us-east-1"
 AWS_ACCESS_KEY_ID = "..."
 AWS_SECRET_ACCESS_KEY = "..."
+GOOGLE_MAPS_API_KEY = "..."
 ```
 
-Use an IAM identity limited to the required Bedrock model permissions. Never commit `.env` or `.streamlit/secrets.toml`.
+The Google key must have the **Directions API** enabled and billing configured in Google Cloud. Use an IAM identity limited to the required Bedrock model permissions. Never commit `.env` or `.streamlit/secrets.toml`.
 
 ### Run with Docker
 
@@ -141,9 +144,11 @@ Open [http://localhost:8501](http://localhost:8501). The container listens on po
 1. Enter your own commitments in the sidebar, one per line using `time | activity | category`.
 2. Add home/work locations, family modules, and a travel estimate. A family module needs a name, venue address, and schedule before it can produce a WhatsApp draft.
 3. Describe what is happening now in **Your real situation today**, for example: `My meeting ran 30 minutes over and I need to pick up my child.`
-4. Click **Analyze my day**.
+4. HomeCopilot detects the completed context and automatically starts the analysis.
 5. Review the diagnosis, alternatives, decision trace, severity, and recommended plan.
 6. Approve the plan before using calendar or WhatsApp actions.
+
+To demonstrate the agentic workflow, enable **Supervised autopilot** in the sidebar. Once the email/calendar context, origin, agenda or incident, and route information are complete, HomeCopilot detects context changes and starts the analysis automatically. External actions still remain behind the human approval gate.
 
 The application does not invent calendar events, family members, addresses, or schedules.
 
@@ -157,7 +162,7 @@ The application does not invent calendar events, family members, addresses, or s
 
 ## Current Integration Boundary
 
-The current hackathon build uses local tool implementations and Streamlit session state for calendar, email, and WhatsApp actions. They demonstrate the agent contract and approval flow, but they do not claim to send real email, modify an external calendar, or send a real WhatsApp message. Google Maps is embedded for route visualization and calculates its own travel estimate.
+The current hackathon build uses local tool implementations and Streamlit session state for calendar, email, and WhatsApp actions. They demonstrate the agent contract and approval flow, but they do not claim to send real email, modify an external calendar, or send a real WhatsApp message. Route time is calculated through the Google Maps Directions API when `GOOGLE_MAPS_API_KEY` is configured; the embedded map provides visual route inspection.
 
 
 ## License
