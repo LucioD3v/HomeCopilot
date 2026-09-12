@@ -839,6 +839,12 @@ if "mental_load_task_minutes" not in st.session_state:
 if "daily_capacity" not in st.session_state:
   st.session_state.daily_capacity = None
 
+if "whatsapp_status" not in st.session_state:
+  st.session_state.whatsapp_status = "idle"
+
+if "last_analysis_duration" not in st.session_state:
+  st.session_state.last_analysis_duration = None
+
 if "user_travel_time_min" not in st.session_state:
   st.session_state.user_travel_time_min = 0
 
@@ -944,6 +950,24 @@ def parse_time_segments(text: str) -> list[tuple[int, int]]:
   if minutes[1] <= minutes[0]:
     minutes[1] += 12 * 60
   return [(minutes[0], minutes[1])]
+
+
+def format_duration(minutes: int | None, language: str = "English") -> str:
+  if minutes is None:
+    return "--"
+  sign = "-" if minutes < 0 else ""
+  hours, remainder = divmod(abs(int(minutes)), 60)
+  if language == "Español":
+    if hours and remainder:
+      return f"{sign}{hours} h {remainder} min"
+    if hours:
+      return f"{sign}{hours} h"
+    return f"{sign}{remainder} min"
+  if hours and remainder:
+    return f"{sign}{hours}h {remainder}m"
+  if hours:
+    return f"{sign}{hours}h"
+  return f"{sign}{remainder}m"
 
 
 def calculate_daily_capacity(
@@ -1636,7 +1660,11 @@ with st.sidebar:
     )
     record_decision_step(
       "Constraints evaluated",
-      f"Travel reference calculated at {st.session_state.travel_time_min} minutes.",
+      (
+          f"Referencia de ruta calculada: {format_duration(st.session_state.travel_time_min, 'Español')}."
+          if is_es
+          else f"Route reference calculated: {format_duration(st.session_state.travel_time_min, 'English')}."
+      ),
     )
 
     capacity = calculate_daily_capacity(
@@ -1648,7 +1676,11 @@ with st.sidebar:
     st.session_state.daily_capacity = capacity
     record_decision_step(
       "Mental load evaluated",
-      f"{capacity['severity']} load; {capacity['raw_margin_minutes']} minutes of real margin remain.",
+      (
+          f"Carga {capacity['severity']}; quedan {format_duration(capacity['raw_margin_minutes'], 'Español')} de margen real."
+          if is_es
+          else f"{capacity['severity']} load; {format_duration(capacity['raw_margin_minutes'], 'English')} of real margin remain."
+      ),
     )
 
     user_schedule = st.session_state.user_schedule_text.strip() or (
@@ -1802,7 +1834,7 @@ def show_traffic_map(origen, destino):
       f"**📍 Origen / Origin:** {valid_origen}  ──🚗──>  **🏁 Destino / Destination:** {valid_destino}"
   )
   st.success(
-      f"✅ **{('Tiempo de la ruta:' if is_es else 'Route time:')}** **{st.session_state.travel_time_min} {'minutos' if is_es else 'minutes'}**"
+      f"✅ **{('Tiempo de la ruta:' if is_es else 'Route time:')}** **{format_duration(st.session_state.travel_time_min, 'Español' if is_es else 'English')}**"
   )
   st.caption(
       "El tiempo mostrado corresponde a la misma ruta A → B calculada por el agente."
@@ -1929,13 +1961,13 @@ if st.session_state.email_connected:
       f"""
       <div class="capacity-card" style="border-left-color: {capacity_color};">
         <div class="capacity-title">🧠 {'Carga del día' if is_es else 'Daily load'}: {capacity['severity']}</div>
-        <div class="capacity-margin">{'Margen real' if is_es else 'Real margin'}: <strong>{capacity['raw_margin_minutes']} min</strong></div>
+        <div class="capacity-margin">{'Tiempo flexible que queda' if is_es else 'Flexible time remaining'}: <strong>{format_duration(capacity['raw_margin_minutes'], 'Español' if is_es else 'English')}</strong></div>
         <div class="capacity-details">
-          {'Agenda' if is_es else 'Schedule'}: {capacity['occupied_minutes']} min ·
-          {'Familia' if is_es else 'Family'}: {capacity['module_minutes']} min ·
-          {'Traslados' if is_es else 'Travel'}: {capacity['travel_minutes']} min ·
-          {'Tarea' if is_es else 'Task'}: {capacity['task_minutes']} min ·
-          {'Buffer' if is_es else 'Buffer'}: {capacity['buffer_minutes']} min
+          {'Agenda' if is_es else 'Schedule'}: {format_duration(capacity['occupied_minutes'], 'Español' if is_es else 'English')} ·
+          {'Familia' if is_es else 'Family'}: {format_duration(capacity['module_minutes'], 'Español' if is_es else 'English')} ·
+          {'Traslados' if is_es else 'Travel'}: {format_duration(capacity['travel_minutes'], 'Español' if is_es else 'English')} ·
+          {'Tarea' if is_es else 'Task'}: {format_duration(capacity['task_minutes'], 'Español' if is_es else 'English')} ·
+          {'Margen de protección' if is_es else 'Protection margin'}: {format_duration(capacity['buffer_minutes'], 'Español' if is_es else 'English')}
         </div>
         <div class="capacity-note">{
           'Agregar otra tarea de 60 minutos implicaría sacrificar descanso u otra obligación.'
@@ -2048,7 +2080,7 @@ if st.session_state.contingency_plan:
     <p style="margin: 0 0 8px 0;"><b>{'Por qué importa' if is_es else 'Why it matters'}:</b> {plan['reason']}</p>
     <p style="margin: 0 0 6px 0;"><b>{'Plan recomendado' if is_es else 'Recommended plan'}:</b></p>
     <ul style="margin-top: 0;">{''.join(f'<li>{action}</li>' for action in plan['actions'])}</ul>
-    <p style="margin: 8px 0 0 0;">🚗 {'Traslado efectivo' if is_es else 'Effective travel'}: <b>{plan['travel_time']} min</b> · {'Aprobación requerida' if is_es else 'Approval required'}: <b>{'Sí' if is_es else 'Yes'}</b></p>
+    <p style="margin: 8px 0 0 0;">🚗 {'Traslado efectivo' if is_es else 'Effective travel'}: <b>{format_duration(plan['travel_time'], 'Español' if is_es else 'English')}</b> · {'Aprobación requerida' if is_es else 'Approval required'}: <b>{'Sí' if is_es else 'Yes'}</b></p>
     </div>
     """,
     unsafe_allow_html=True,
@@ -2058,6 +2090,15 @@ if st.session_state.contingency_plan:
     approve_label = "✅ Aprobar plan y habilitar acciones" if is_es else "✅ Approve plan and enable actions"
     if st.button(approve_label, type="primary", use_container_width=True):
       st.session_state.plan_approved = True
+      if (
+          st.session_state.wa_connected
+          and st.session_state.draft_wa_message
+          and get_actionable_modules()
+      ):
+        st.session_state.whatsapp_status = "sent"
+        st.session_state.agent_actions.append(
+            "📱 [WHATSAPP SIMULATION]: Message sent after human approval."
+        )
       st.session_state.agent_actions.append(
           "✅ [HUMAN APPROVAL]: Contingency plan approved."
       )
@@ -2072,11 +2113,18 @@ if st.session_state.contingency_plan:
     for trace_item in st.session_state.decision_trace:
       if trace_item["status"] == "waiting":
         trace_item["status"] = "approved"
-    st.success(
-        "Plan aprobado. Ya puedes ejecutar las acciones propuestas desde los controles inferiores."
-        if is_es
-        else "Plan approved. You can now execute the proposed actions from the controls below."
-    )
+    if st.session_state.whatsapp_status == "sent":
+      st.success(
+          "Plan aprobado. HomeCopilot envió el mensaje al grupo seleccionado (simulación local)."
+          if is_es
+          else "Plan approved. HomeCopilot sent the message to the selected group (local simulation)."
+      )
+    else:
+      st.success(
+          "Plan aprobado. Las acciones disponibles quedaron habilitadas para revisión."
+          if is_es
+          else "Plan approved. Available actions are now enabled for review."
+      )
 
 if st.session_state.decision_trace:
   with st.expander(
@@ -2125,7 +2173,7 @@ if st.session_state.last_agent_response:
       f"""
         <div class='proactive-card-alert'>
             <h4>📧 {t['alert_box']}</h4>
-            <p>{('Origen:' if is_es else 'Origin:')} <b>{origin_address if origin_address else ('No especificado' if is_es else 'Not specified')}</b> ➔ {('Destino:' if is_es else 'Destination:')} <b>{activity_dest}</b> | {('Tiempo Google Maps:' if is_es else 'Google Maps time:')} <b>{st.session_state.travel_time_min} {'mins' if is_es else 'mins'}</b>.</p>
+            <p>{('Origen:' if is_es else 'Origin:')} <b>{origin_address if origin_address else ('No especificado' if is_es else 'Not specified')}</b> ➔ {('Destino:' if is_es else 'Destination:')} <b>{activity_dest}</b> | {('Tiempo Google Maps:' if is_es else 'Google Maps time:')} <b>{format_duration(st.session_state.travel_time_min, 'Español' if is_es else 'English')}</b>.</p>
         </div>
     """,
       unsafe_allow_html=True,
@@ -2149,6 +2197,12 @@ if st.session_state.last_agent_response:
         st.session_state.draft_wa_message = f"Hello everyone, regarding '{actionable_modules[0]['desc']}', I have a work conflict due to traffic. Can anyone help me with the ride? 🚗"
 
     wa_msg_text = st.text_area(t["wa_draft_lbl"], value=st.session_state.draft_wa_message)
+    if st.session_state.whatsapp_status == "sent":
+      st.success(
+          "✅ Mensaje enviado al grupo seleccionado."
+          if is_es
+          else "✅ Message sent to the selected group."
+      )
     if not actionable_modules:
       st.warning(
           "Completa nombre, dirección y horario de una actividad familiar antes de preparar un mensaje."
@@ -2184,7 +2238,9 @@ if st.session_state.last_agent_response:
           if st.session_state.wa_connected
           else ("Grupo" if is_es else "Group")
       )
-      if st.button(f"{t['send_btn']} {target_g}", use_container_width=True):
+      if st.session_state.whatsapp_status != "sent" and st.button(
+          f"{t['send_btn']} {target_g}", use_container_width=True
+      ):
         if st.session_state.contingency_plan and not st.session_state.plan_approved:
           st.warning(
               "Aprueba primero el plan de contingencia."
@@ -2209,7 +2265,12 @@ if st.session_state.last_agent_response:
               f' "{wa_msg_text}"'
           )
           st.session_state.agent_actions.append(action_log_entry)
-          st.success(f"{t['success_msg']} {target_g}.")
+          st.session_state.whatsapp_status = "sent"
+          st.success(
+              f"✅ Mensaje enviado a {target_g}."
+              if is_es
+              else f"✅ Message sent to {target_g}."
+          )
           st.rerun()
 
 # --- BITÁCORA DE ACCIONES (ACTION LOG) ---
