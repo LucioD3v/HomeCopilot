@@ -28,6 +28,7 @@ HomeCopilot addresses that decision problem. The user provides their own commitm
 - Automatically detects complete context changes, calculates the route, and starts a new agent analysis without an Analyze button.
 - Remembers household context and recent incidents in a local SQLite memory associated with the user's email.
 - Produces severity, cause, alternatives, recommendation, and approval-required actions.
+- Calculates daily mental load from work commitments, family commitments, travel, task duration, and buffers, then reports real remaining capacity.
 - Creates a WhatsApp draft only when an activity has a name, venue address, and schedule.
 - Blocks calendar, email, and WhatsApp actions when data or approval is missing.
 - Shows an auditable decision cycle: context received, constraints evaluated, tool selected, plan ready, and approval status.
@@ -152,6 +153,8 @@ Open [http://localhost:8501](http://localhost:8501). The container listens on po
 4. HomeCopilot detects the completed context and automatically starts the analysis.
 5. Review the diagnosis, alternatives, decision trace, severity, and recommended plan.
 6. Approve the plan before using calendar or WhatsApp actions.
+
+The daily-load panel explains how much real margin remains after the user's schedule, family modules, round-trip travel, optional household task, and a protective buffer. A high-load day warns when another task would consume rest or an existing obligation.
 
 When the same email is used again, HomeCopilot loads the saved household context and recent incidents into the agent context. The local SQLite database is ignored by Git and can be replaced by a managed database for production deployment.
 

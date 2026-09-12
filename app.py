@@ -2,6 +2,7 @@ import datetime
 import base64
 import json
 import os
+import re
 import urllib.parse
 from pathlib import Path
 
@@ -390,6 +391,35 @@ st.markdown(
         color: #fca5a5;
     }
 
+      .capacity-card {
+        border-left: 5px solid #38bdf8;
+        border-radius: 8px;
+        padding: 14px 18px;
+        margin: 12px 0;
+        background: #172943;
+        color: #f8fafc;
+      }
+
+      .capacity-title {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #f8fafc;
+      }
+
+      .capacity-margin {
+        margin-top: 5px;
+        font-size: 1rem;
+        color: #dbeafe;
+      }
+
+      .capacity-details,
+      .capacity-note {
+        margin-top: 6px;
+        font-size: 0.9rem;
+        line-height: 1.4;
+        color: #b8c7dc;
+      }
+
       .contingency-plan-card {
         color: #f8fafc !important;
       }
@@ -704,6 +734,18 @@ else:
         color: #172033 !important;
       }
 
+      .capacity-card {
+        background: #e8f1fb !important;
+        color: #172033 !important;
+      }
+
+      .capacity-title,
+      .capacity-margin,
+      .capacity-details,
+      .capacity-note {
+        color: #172033 !important;
+      }
+
       [data-testid="stDialog"],
       [role="dialog"] {
         background: #ffffff !important;
@@ -788,6 +830,15 @@ if "user_schedule_text" not in st.session_state:
 if "real_incident_text" not in st.session_state:
   st.session_state.real_incident_text = ""
 
+if "mental_load_task" not in st.session_state:
+  st.session_state.mental_load_task = ""
+
+if "mental_load_task_minutes" not in st.session_state:
+  st.session_state.mental_load_task_minutes = 0
+
+if "daily_capacity" not in st.session_state:
+  st.session_state.daily_capacity = None
+
 if "user_travel_time_min" not in st.session_state:
   st.session_state.user_travel_time_min = 0
 
@@ -868,6 +919,104 @@ def parse_user_schedule(schedule_text: str) -> list[dict]:
         "Estado": "📝 Proporcionado por usuario",
     })
   return events
+
+
+def parse_time_segments(text: str) -> list[tuple[int, int]]:
+  """Extracts one or two clock times from a schedule line."""
+  matches = re.findall(
+      r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)?",
+      text.lower(),
+  )
+  minutes = []
+  for hour_text, minute_text, meridiem in matches[:2]:
+    hour = int(hour_text)
+    minute = int(minute_text or 0)
+    if meridiem == "pm" and hour < 12:
+      hour += 12
+    if meridiem == "am" and hour == 12:
+      hour = 0
+    if hour <= 23 and minute <= 59:
+      minutes.append(hour * 60 + minute)
+  if not minutes:
+    return []
+  if len(minutes) == 1:
+    minutes.append(minutes[0] + 60)
+  if minutes[1] <= minutes[0]:
+    minutes[1] += 12 * 60
+  return [(minutes[0], minutes[1])]
+
+
+def calculate_daily_capacity(
+    schedule_text: str,
+    modules: list[dict],
+    route_minutes: int,
+    task_minutes: int,
+    workday_minutes: int = 9 * 60,
+    buffer_minutes: int = 30,
+) -> dict:
+  """Calculates usable daily capacity after commitments and logistics."""
+  occupied_minutes = 0
+  for line in schedule_text.splitlines():
+    segments = parse_time_segments(line)
+    occupied_minutes += sum(end - start for start, end in segments)
+
+  module_minutes = 0
+  for module in modules:
+    for venue_key in ("sede_1", "sede_2"):
+      venue = module.get(venue_key)
+      if venue:
+        module_minutes += sum(
+            end - start for start, end in parse_time_segments(venue.get("rutina", ""))
+        )
+
+  round_trip_minutes = route_minutes * 2 if route_minutes else 0
+  committed_minutes = (
+      occupied_minutes
+      + module_minutes
+      + round_trip_minutes
+      + task_minutes
+      + buffer_minutes
+  )
+  capacity_minutes = max(0, workday_minutes - committed_minutes)
+  raw_margin = workday_minutes - committed_minutes
+  if raw_margin < 0:
+    severity = "Alta" if is_es else "High"
+  elif raw_margin < 60:
+    severity = "Media" if is_es else "Medium"
+  else:
+    severity = "Baja" if is_es else "Low"
+  return {
+      "available_minutes": capacity_minutes,
+      "raw_margin_minutes": raw_margin,
+      "occupied_minutes": occupied_minutes,
+      "module_minutes": module_minutes,
+      "travel_minutes": round_trip_minutes,
+      "task_minutes": task_minutes,
+      "buffer_minutes": buffer_minutes,
+      "severity": severity,
+  }
+
+
+@tool
+def assess_daily_mental_load(
+    task_description: str,
+    task_minutes: int,
+    route_minutes: int,
+) -> str:
+  """Assesses real remaining capacity after schedule, family, travel, task, and buffer."""
+  result = calculate_daily_capacity(
+      st.session_state.user_schedule_text,
+      st.session_state.life_modules,
+      route_minutes,
+      task_minutes,
+  )
+  st.session_state.daily_capacity = result
+  return (
+      f"Daily load: {result['severity']}. Real margin: "
+      f"{result['raw_margin_minutes']} minutes. "
+      f"Task considered: {task_description or 'none'}. "
+      f"Travel: {result['travel_minutes']} minutes round trip."
+  )
 
 
 def persist_household_context(
@@ -1490,6 +1639,18 @@ with st.sidebar:
       f"Travel reference calculated at {st.session_state.travel_time_min} minutes.",
     )
 
+    capacity = calculate_daily_capacity(
+      st.session_state.user_schedule_text,
+      st.session_state.life_modules,
+      st.session_state.baseline_travel_time_min,
+      st.session_state.mental_load_task_minutes,
+    )
+    st.session_state.daily_capacity = capacity
+    record_decision_step(
+      "Mental load evaluated",
+      f"{capacity['severity']} load; {capacity['raw_margin_minutes']} minutes of real margin remain.",
+    )
+
     user_schedule = st.session_state.user_schedule_text.strip() or (
       "No schedule entered by the user."
       if not is_es
@@ -1529,6 +1690,8 @@ USER CONTEXT:
 - Additional delay: {st.session_state.contingency_delay_min} minutes
 - Estimated Traffic Travel Time: {st.session_state.travel_time_min} minutes.
 - User-reported incident: {incident_context}
+- Daily mental-load calculation: {capacity}
+- Additional household task: {st.session_state.mental_load_task or 'None'} ({st.session_state.mental_load_task_minutes} minutes)
 - User-provided commitments (treat as source of truth):
 {user_schedule}
 - Persistent household memory (use it as remembered context, but prefer current user input when they differ):
@@ -1553,6 +1716,7 @@ USER LIFE MODULES:
         system_prompt=sys_prompt,
         tools=[
             calculator,
+            assess_daily_mental_load,
             evaluate_contingency,
             send_email_reminder,
             modify_calendar_event,
@@ -1745,6 +1909,46 @@ else:
       "👈 Activa tu espacio de trabajo en el panel lateral para comenzar."
       if is_es
       else "👈 Activate your workspace in the sidebar to begin."
+  )
+
+if st.session_state.email_connected:
+  capacity = st.session_state.daily_capacity or calculate_daily_capacity(
+      st.session_state.user_schedule_text,
+      st.session_state.life_modules,
+      st.session_state.baseline_travel_time_min,
+      st.session_state.mental_load_task_minutes,
+  )
+  st.session_state.daily_capacity = capacity
+  capacity_color = {
+      "Alta": "#ef4444",
+      "High": "#ef4444",
+      "Media": "#f59e0b",
+      "Medium": "#f59e0b",
+  }.get(capacity["severity"], "#22c55e")
+  st.markdown(
+      f"""
+      <div class="capacity-card" style="border-left-color: {capacity_color};">
+        <div class="capacity-title">🧠 {'Carga del día' if is_es else 'Daily load'}: {capacity['severity']}</div>
+        <div class="capacity-margin">{'Margen real' if is_es else 'Real margin'}: <strong>{capacity['raw_margin_minutes']} min</strong></div>
+        <div class="capacity-details">
+          {'Agenda' if is_es else 'Schedule'}: {capacity['occupied_minutes']} min ·
+          {'Familia' if is_es else 'Family'}: {capacity['module_minutes']} min ·
+          {'Traslados' if is_es else 'Travel'}: {capacity['travel_minutes']} min ·
+          {'Tarea' if is_es else 'Task'}: {capacity['task_minutes']} min ·
+          {'Buffer' if is_es else 'Buffer'}: {capacity['buffer_minutes']} min
+        </div>
+        <div class="capacity-note">{
+          'Agregar otra tarea de 60 minutos implicaría sacrificar descanso u otra obligación.'
+          if capacity['raw_margin_minutes'] < 60 and is_es
+          else 'Adding another 60-minute task would risk rest or an existing commitment.'
+          if capacity['raw_margin_minutes'] < 60
+          else 'There is meaningful capacity for another flexible task.'
+          if not is_es
+          else 'Todavía existe capacidad razonable para una tarea flexible.'
+        }</div>
+      </div>
+      """,
+      unsafe_allow_html=True,
   )
 
 st.markdown("---")
