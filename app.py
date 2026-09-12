@@ -1,8 +1,10 @@
 import datetime
 import base64
+import json
 import os
 import urllib.parse
 from pathlib import Path
+
 import pandas as pd
 import requests
 import streamlit as st
@@ -11,17 +13,21 @@ from dotenv import load_dotenv
 
 from strands import Agent, tool
 from strands_tools import calculator
+from memory import format_memory, load_memory, record_event, save_profile
 
 load_dotenv()
 
 logo_path = Path(__file__).parent / "images" / "logo_HomeCopilot.png"
+module_config_path = Path(__file__).parent / "data" / "module_config.json"
+module_configs_by_language = json.loads(
+    module_config_path.read_text(encoding="utf-8")
+)
 logo_data_uri = ""
 if logo_path.exists():
   logo_data = base64.b64encode(logo_path.read_bytes()).decode("ascii")
   logo_data_uri = f"data:image/png;base64,{logo_data}"
 
-# Streamlit Cloud exposes deployment secrets through st.secrets. Mirror only
-# standard AWS variables so boto3 and Strands can use the same code locally and online.
+# Streamlit Cloud exposes deployment secrets through st.secrets.
 for aws_key in (
     "AWS_REGION",
     "AWS_DEFAULT_REGION",
@@ -37,29 +43,21 @@ for aws_key in (
     except (FileNotFoundError, KeyError):
       pass
 
-# --- DETECCIÓN REAL DE DÍA Y FECHA ---
 now = datetime.datetime.now()
 days_es = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
-days_en = [
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-    "Sunday",
-]
-
+days_en = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 current_day_es = days_es[now.weekday()]
 current_day_en = days_en[now.weekday()]
 current_date_str = now.strftime("%Y-%m-%d")
 
-# --- GESTIÓN DE IDIOMA Y TRADUCCIONES UI ---
 if "language" not in st.session_state:
   st.session_state.language = "English"
 
 if "theme" not in st.session_state:
   st.session_state.theme = "Oscuro"
+
+if "persistent_memory" not in st.session_state:
+  st.session_state.persistent_memory = {"profile": {}, "events": []}
 
 language = st.session_state.language
 theme = st.session_state.theme
@@ -872,6 +870,29 @@ def parse_user_schedule(schedule_text: str) -> list[dict]:
   return events
 
 
+def persist_household_context(
+    identifier: str,
+    schedule: str,
+    modules: list[dict],
+    origin: str = "",
+    destination: str = "",
+) -> None:
+  """Stores stable household context for the next HomeCopilot session."""
+  save_profile(
+      identifier,
+      {
+          "schedule": schedule.strip(),
+          "modules": modules,
+          "origin": origin.strip(),
+          "destination": destination.strip(),
+      },
+  )
+
+
+def refresh_persistent_memory(identifier: str) -> None:
+  st.session_state.persistent_memory = load_memory(identifier)
+
+
 def get_actionable_modules() -> list[dict]:
   """Returns only family modules with enough data for an external action."""
   return [
@@ -1147,6 +1168,12 @@ with st.sidebar:
       if is_es
       else "These are your own data: the agent does not add events automatically."
   )
+  if st.session_state.persistent_memory.get("profile"):
+    st.caption(
+        "🧠 Memoria del hogar cargada para esta cuenta."
+        if is_es
+        else "🧠 Household memory loaded for this account."
+    )
   if st.session_state.email_connected:
     if st.button(
         "🔄 Actualizar mi agenda" if is_es else "🔄 Update my schedule",
@@ -1155,6 +1182,12 @@ with st.sidebar:
       st.session_state.timeline_events = parse_user_schedule(
           st.session_state.user_schedule_text
       )
+      persist_household_context(
+          st.session_state.user_email,
+          st.session_state.user_schedule_text,
+          st.session_state.life_modules,
+      )
+      refresh_persistent_memory(st.session_state.user_email)
       st.session_state.agent_actions.append(
           "🔄 [USER CONTEXT]: Personal schedule updated."
       )
@@ -1168,9 +1201,10 @@ with st.sidebar:
         st.session_state.timeline_events = parse_user_schedule(
             st.session_state.user_schedule_text
         )
+        refresh_persistent_memory(st.session_state.user_email)
         record_decision_step(
             "Context loaded",
-            "Calendar access simulated; user-provided activities loaded.",
+          "Calendar access simulated; user-provided activities and saved memory loaded.",
         )
         st.session_state.agent_actions.append(
             "🔗 [CALENDAR SIMULATION]: User email accepted and agenda loaded."
@@ -1275,68 +1309,7 @@ with st.sidebar:
 
   st.subheader(f"🎯 {t['mod_title']}")
 
-  if is_es:
-    MODULE_CONFIGS = {
-        "Familiar": {
-            "label_desc": "Nombre del Hijo / Responsable",
-            "ph_desc": "Ej. Gerardo (Hijo)",
-            "label_loc": "📍 Dirección Sede 1 (Ej. Dojo Karate)",
-            "ph_loc": "Ej. Dojo Cañada, Av. Revolución 45",
-            "ph_rut": "Ej. Martes y Jueves - 16:30",
-        },
-        "Hobby / Deporte": {
-            "label_desc": "Nombre del Hobby / Deporte",
-            "ph_desc": "Ej. Entrenamiento de Carrera",
-            "label_loc": "📍 Dirección Sede 1",
-            "ph_loc": "Ej. Pista El Sope, Chapultepec",
-            "ph_rut": "Ej. Lunes y Miércoles - 18:00",
-        },
-        "Mascota": {
-            "label_desc": "Mascota / Actividad",
-            "ph_desc": "Ej. Bruno (Veterinaria)",
-            "label_loc": "📍 Dirección Sede 1",
-            "ph_loc": "Ej. VetCare Insurgentes Sur 300",
-            "ph_rut": "Ej. Todos los días - 08:00",
-        },
-        "Desarrollo Personal": {
-            "label_desc": "Proyecto / Actividad",
-            "ph_desc": "Ej. Redacción Artículo Técnico",
-            "label_loc": "📍 Ubicación / Sede 1",
-            "ph_loc": "Ej. Biblioteca Vasconcelos",
-            "ph_rut": "Ej. Viernes - 17:00 a 19:00",
-        },
-    }
-  else:
-    MODULE_CONFIGS = {
-        "Family": {
-            "label_desc": "Child / Family Name",
-            "ph_desc": "Ex. Gerardo",
-            "label_loc": "📍 Venue 1 Address (Ex. Karate Dojo)",
-            "ph_loc": "Ex. Dojo Cañada, 45 Revolution Ave.",
-            "ph_rut": "Ex. Tuesday and Thursday - 16:30",
-        },
-        "Hobby / Sport": {
-            "label_desc": "Hobby / Sport Name",
-            "ph_desc": "Ex. Running Training",
-            "label_loc": "📍 Venue 1 Address",
-            "ph_loc": "Ex. El Sope Track",
-            "ph_rut": "Ex. Monday and Wednesday - 18:00",
-        },
-        "Pet": {
-            "label_desc": "Pet / Activity",
-            "ph_desc": "Ex. Bruno (Vet)",
-            "label_loc": "📍 Venue 1 Address",
-            "ph_loc": "Ex. VetCare Clinic",
-            "ph_rut": "Ex. Every day - 08:00",
-        },
-        "Personal Development": {
-            "label_desc": "Project / Personal Activity",
-            "ph_desc": "Ex. Writing Technical Article",
-            "label_loc": "📍 Location / Venue 1",
-            "ph_loc": "Ex. Vasconcelos Library",
-            "ph_rut": "Ex. Friday - 17:00 to 19:00",
-        },
-    }
+  MODULE_CONFIGS = module_configs_by_language[language]
 
   num_modules = st.number_input(
       t["num_mods"], min_value=1, max_value=5, value=1, step=1
@@ -1522,6 +1495,10 @@ with st.sidebar:
       if not is_es
       else "El usuario no ingresó compromisos."
     )
+    memory_context = format_memory(
+        st.session_state.persistent_memory,
+        lang_val,
+    )
     incident_context = incident_text.strip() or (
       "No active incident reported."
       if not is_es
@@ -1554,6 +1531,8 @@ USER CONTEXT:
 - User-reported incident: {incident_context}
 - User-provided commitments (treat as source of truth):
 {user_schedule}
+- Persistent household memory (use it as remembered context, but prefer current user input when they differ):
+{memory_context}
 
 LOGISTICS REASONING:
 1. Compare work events with Life Modules (analyzing both Venue 1 and Venue 2 locations if present).
@@ -1583,6 +1562,19 @@ USER LIFE MODULES:
 
     response = agent(prompt_text)
     st.session_state.last_agent_response = str(response)
+    record_event(
+      st.session_state.user_email,
+      "incident",
+      incident_context,
+    )
+    persist_household_context(
+      st.session_state.user_email,
+      st.session_state.user_schedule_text,
+      st.session_state.life_modules,
+      origin_addr_val,
+      dest_addr_val,
+    )
+    refresh_persistent_memory(st.session_state.user_email)
     if not st.session_state.contingency_plan:
       record_decision_step(
           "Plan ready",
@@ -1594,6 +1586,15 @@ USER LIFE MODULES:
   if st.button(t["save_mods"], type="primary", use_container_width=True):
     st.session_state.life_modules = current_modules
     st.session_state.draft_wa_message = ""
+    persist_household_context(
+        st.session_state.user_email,
+        st.session_state.user_schedule_text,
+        current_modules,
+        origin_address,
+        destination_address,
+    )
+    if st.session_state.user_email:
+      refresh_persistent_memory(st.session_state.user_email)
     if st.session_state.email_connected:
       with st.spinner(
           "🤖 HomeCopilot está actualizando tu contexto y evaluando la logística..."

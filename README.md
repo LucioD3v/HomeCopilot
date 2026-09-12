@@ -26,6 +26,7 @@ HomeCopilot addresses that decision problem. The user provides their own commitm
 - Accepts free-form incidents such as a late meeting, a cancelled caregiver, or an impossible pickup.
 - Evaluates the incident with the Google Maps route duration and family modules.
 - Automatically detects complete context changes, calculates the route, and starts a new agent analysis without an Analyze button.
+- Remembers household context and recent incidents in a local SQLite memory associated with the user's email.
 - Produces severity, cause, alternatives, recommendation, and approval-required actions.
 - Creates a WhatsApp draft only when an activity has a name, venue address, and schedule.
 - Blocks calendar, email, and WhatsApp actions when data or approval is missing.
@@ -42,6 +43,7 @@ HomeCopilot is a human-in-the-loop agent, not a static chatbot:
 4. **Decision layer:** The app records and displays an explainable plan.
 5. **Approval layer:** Consequential actions remain blocked until the user approves the plan.
 6. **Audit layer:** The decision trace and action log show what happened and why.
+7. **Memory layer:** SQLite stores stable household context and recent incidents for future sessions.
 
 ### Architecture Diagram
 
@@ -147,6 +149,8 @@ Open [http://localhost:8501](http://localhost:8501). The container listens on po
 4. HomeCopilot detects the completed context and automatically starts the analysis.
 5. Review the diagnosis, alternatives, decision trace, severity, and recommended plan.
 6. Approve the plan before using calendar or WhatsApp actions.
+
+When the same email is used again, HomeCopilot loads the saved household context and recent incidents into the agent context. The local SQLite database is ignored by Git and can be replaced by a managed database for production deployment.
 
 Once the email/calendar context, origin, agenda or incident, and route information are complete, HomeCopilot detects context changes and starts the analysis automatically. There is no manual Analyze button. External actions still remain behind the human approval gate.
 

@@ -1,4 +1,8 @@
+"""Legacy CLI prototype. The supported product entry point is app.py."""
+
 import os
+import re
+import unicodedata
 from dotenv import load_dotenv
 from strands import Agent, tool
 from strands_tools import calculator
@@ -7,23 +11,59 @@ load_dotenv()
 
 @tool
 def check_kids_schedule(activity_name: str, day_of_week: str, time_slot: str) -> str:
-    """Verifica si hay conflictos en la agenda semanal de los niños (Gerardo de 5 años: natación, ajedrez, futbol, karate 2x semana; Isabella de 2 años: guardería)."""
+    """Detecta solapamientos reales entre actividades del mismo día."""
     schedule = {
-        "Lunes": ["Guardería (Isabella)", "Ajedrez (Gerardo - 6:00 PM)"],
-        "Martes": ["Guardería (Isabella)", "Karate (Gerardo - 4:00 PM)"],
-        "Miércoles": ["Guardería (Isabella)", "Ajedrez (Gerardo - 6:00 PM)"],
-        "Jueves": ["Guardería (Isabella)", "Karate (Gerardo - 4:00 PM)"],
-        "Viernes": ["Guardería (Isabella)", "Futbol (Gerardo - 5:00 PM)"],
-        "Sábado": ["Natación (Gerardo - 11:00 AM)"],
+        "lunes": [("Guardería (Isabella)", 8 * 60, 15 * 60)],
+        "martes": [("Guardería (Isabella)", 8 * 60, 15 * 60), ("Karate (Gerardo)", 16 * 60, 17 * 60)],
+        "miercoles": [("Guardería (Isabella)", 8 * 60, 15 * 60), ("Ajedrez (Gerardo)", 18 * 60, 19 * 60)],
+        "jueves": [("Guardería (Isabella)", 8 * 60, 15 * 60), ("Karate (Gerardo)", 16 * 60, 17 * 60)],
+        "viernes": [("Guardería (Isabella)", 8 * 60, 15 * 60), ("Futbol (Gerardo)", 17 * 60, 18 * 60)],
+        "sabado": [("Natación (Gerardo)", 11 * 60, 12 * 60)],
     }
-    
-    day = day_of_week.lower()
-    if day in schedule:
-        existing_activities = schedule[day]
-        for act in existing_activities:
-            if time_slot.lower() in act.lower() or day in ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado"]:
-                return f"CONFLICTO DE AGENDA el {day} a las {time_slot}: Ya se encuentra programado '{act}' para los niños. Choca con la nueva actividad propuesta: '{activity_name}'."
-    return f"Agenda libre el {day} para la actividad: '{activity_name}'."
+
+    day = _normalize_day(day_of_week)
+    proposed_start, proposed_end = _parse_time_range(time_slot)
+    if proposed_start is None:
+        return f"No pude interpretar el horario '{time_slot}' para el día {day_of_week}."
+
+    for activity, start, end in schedule.get(day, []):
+        if proposed_start < end and start < proposed_end:
+            return (
+                f"CONFLICTO DE AGENDA el {day_of_week} de {time_slot}: "
+                f"'{activity}' ocupa el intervalo {start // 60:02d}:{start % 60:02d}-"
+                f"{end // 60:02d}:{end % 60:02d}. "
+                f"Choca con '{activity_name}'."
+            )
+    return f"Agenda libre el {day_of_week} para la actividad: '{activity_name}'."
+
+
+def _normalize_day(day_of_week: str) -> str:
+    normalized = unicodedata.normalize("NFD", day_of_week.strip().lower())
+    return "".join(char for char in normalized if unicodedata.category(char) != "Mn")
+
+
+def _parse_time_range(time_slot: str) -> tuple[int | None, int | None]:
+    matches = re.findall(r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", time_slot.lower())
+    if not matches:
+        return None, None
+
+    times = []
+    for hour_text, minute_text, meridiem in matches[:2]:
+        hour = int(hour_text)
+        minute = int(minute_text or 0)
+        if meridiem == "pm" and hour < 12:
+            hour += 12
+        if meridiem == "am" and hour == 12:
+            hour = 0
+        if hour > 23 or minute > 59:
+            return None, None
+        times.append(hour * 60 + minute)
+
+    start = times[0]
+    end = times[1] if len(times) == 2 else start + 60
+    if end <= start:
+        end += 12 * 60 if end == start else 24 * 60
+    return start, end
 
 @tool
 def check_home_office_workload(task_description: str, estimated_hours: float) -> str:

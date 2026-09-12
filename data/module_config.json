@@ -1,0 +1,62 @@
+{
+  "Español": {
+    "Familiar": {
+      "label_desc": "Nombre del Hijo / Responsable",
+      "ph_desc": "Ej. Nombre del familiar",
+      "label_loc": "📍 Dirección Sede 1",
+      "ph_loc": "Ej. Dirección de la actividad",
+      "ph_rut": "Ej. Martes y Jueves - 16:30"
+    },
+    "Hobby / Deporte": {
+      "label_desc": "Nombre del Hobby / Deporte",
+      "ph_desc": "Ej. Entrenamiento de carrera",
+      "label_loc": "📍 Dirección Sede 1",
+      "ph_loc": "Ej. Dirección de la actividad",
+      "ph_rut": "Ej. Lunes y Miércoles - 18:00"
+    },
+    "Mascota": {
+      "label_desc": "Mascota / Actividad",
+      "ph_desc": "Ej. Nombre de la mascota o actividad",
+      "label_loc": "📍 Dirección Sede 1",
+      "ph_loc": "Ej. Dirección de la veterinaria o actividad",
+      "ph_rut": "Ej. Todos los días - 08:00"
+    },
+    "Desarrollo Personal": {
+      "label_desc": "Proyecto / Actividad",
+      "ph_desc": "Ej. Proyecto personal",
+      "label_loc": "📍 Ubicación / Sede 1",
+      "ph_loc": "Ej. Biblioteca, gimnasio o lugar de actividad",
+      "ph_rut": "Ej. Viernes - 17:00 a 19:00"
+    }
+  },
+  "English": {
+    "Family": {
+      "label_desc": "Child / Family Name",
+      "ph_desc": "Ex. Family member name",
+      "label_loc": "📍 Venue 1 Address",
+      "ph_loc": "Ex. Activity address",
+      "ph_rut": "Ex. Tuesday and Thursday - 16:30"
+    },
+    "Hobby / Sport": {
+      "label_desc": "Hobby / Sport Name",
+      "ph_desc": "Ex. Running training",
+      "label_loc": "📍 Venue 1 Address",
+      "ph_loc": "Ex. Activity address",
+      "ph_rut": "Ex. Monday and Wednesday - 18:00"
+    },
+    "Pet": {
+      "label_desc": "Pet / Activity",
+      "ph_desc": "Ex. Pet or activity name",
+      "label_loc": "📍 Venue 1 Address",
+      "ph_loc": "Ex. Vet or activity address",
+      "ph_rut": "Ex. Every day - 08:00"
+    },
+    "Personal Development": {
+      "label_desc": "Project / Personal Activity",
+      "ph_desc": "Ex. Personal project",
+      "label_loc": "📍 Location / Venue 1",
+      "ph_loc": "Ex. Library, gym, or activity location",
+      "ph_rut": "Ex. Friday - 17:00 to 19:00"
+    }
+  }
+}
