@@ -102,7 +102,10 @@ Create a `.env` file in the project root:
 
 ```env
 AWS_REGION=us-east-1
+GOOGLE_MAPS_API_KEY=your_google_maps_api_key
 ```
+
+Use `.env.example` as the template. The real `.env` file and `.streamlit/secrets.toml` are intentionally ignored and must never be committed.
 
 
 ## Run
